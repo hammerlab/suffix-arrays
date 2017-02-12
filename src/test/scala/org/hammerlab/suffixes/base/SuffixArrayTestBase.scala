@@ -129,7 +129,7 @@ trait SuffixArrayDNATest extends SuffixArrayTestBase {
     arr(Array(0, 1, 2, 3, 0, 1, 1, 3), 4) should be(Array(0, 4, 5, 1, 6, 2, 3, 7))
   }
 
-  test(s"SA 4") {
+  test(s"SA-4") {
     // Inserting elements at index 5 in the first array in the second block above.
     arr(Array(0, 1, 2, 0, 1, 0, 1, 0), 4) should be(Array(0, 3, 5, 7, 4, 6, 1, 2))
     arr(Array(0, 1, 2, 0, 1, 1, 1, 0), 4) should be(Array(0, 3, 7, 6, 5, 4, 1, 2))

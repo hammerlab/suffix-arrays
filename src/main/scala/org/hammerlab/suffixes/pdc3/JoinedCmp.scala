@@ -3,12 +3,12 @@ package org.hammerlab.suffixes.pdc3
 import org.hammerlab.suffixes.pdc3.PDC3.Name
 import Utils.longToCmpFnReturn
 
-object JoinedCmp extends Ordering[(Name, Joined)] {
+object JoinedCmp extends Ordering[(Long, Joined)] {
 
   val cmp2 = PairCmp
   val cmp3 = TripletCmp
 
-  override def compare(x: (Name, Joined), y: (Name, Joined)): Int = {
+  override def compare(x: (Long, Joined), y: (Long, Joined)): Int = {
     val (i1, j1) = x
     val (i2, j2) = y
     (i1 % 3, i2 % 3) match {

@@ -6,15 +6,17 @@ import com.esotericsoftware.kryo.Kryo
 import org.apache.hadoop.fs.{ FileSystem, Path }
 import org.apache.hadoop.io.compress.BZip2Codec
 import org.apache.spark.rdd.RDD
-import org.apache.spark.serializer.KryoRegistrator
-import org.hammerlab.magic.rdd.sort.SortRDD._
+import org.hammerlab.iterator.NextOptionIterator
 import org.hammerlab.magic.rdd.serde.SequenceFileSerializableRDD._
 import org.hammerlab.magic.rdd.sliding.SlidingRDD._
+import org.hammerlab.magic.rdd.sort.SortRDD._
+import org.hammerlab.magic.rdd.zip.LazyZippedWithIndexRDD._
+import org.hammerlab.magic.rdd.zip.ZipPartitionsWithIndexRDD._
+import org.hammerlab.spark.PartitionIndex
 import org.hammerlab.suffixes.dc3.DC3
-import org.hammerlab.suffixes.pdc3.PDC3.Name
+import org.hammerlab.suffixes.pdc3.NamingIterator._
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
 // done:
@@ -32,17 +34,23 @@ import scala.reflect.ClassTag
 
 //case class NameTuple
 
-
-
 object PDC3 {
 
   type L = Long
 
-  type PartitionIdx = Int
-  type Name = L
+  implicit class Name(val name: Long) extends AnyVal {
+    def next: Name = name + 1
+    def +(other: Name): Name = name + other.name
+    override def toString: String = name.toString
+  }
+
+  object Name {
+    def unapply(name: Name): Option[Long] = Some(name.name)
+  }
+
   type L3 = (L, L, L)
   type L3I = (L3, L)
-  type NameTuple = (PartitionIdx, Name, L, L3, L3)
+  type NameTuple = (PartitionIndex, Name, L, L3, L3)
   type OL = Option[L]
 
   def apply(t: RDD[L]): RDD[L] = apply(t, t.count)
@@ -108,11 +116,11 @@ object PDC3 {
     }
   }
 
-  def progress[U:ClassTag](name: String, r: => RDD[U]): Unit = {
+  def progress[U:ClassTag](name: String, r: ⇒ RDD[U]): Unit = {
     if (debug) {
       val partitioned =
         r
-          .mapPartitionsWithIndex((idx, iter) => iter.map(idx → _))
+          .mapPartitionsWithIndex((idx, iter) ⇒ iter.map(idx → _))
           .groupByKey
           .collect
           .sortBy(_._1)
@@ -144,7 +152,7 @@ object PDC3 {
   implicit val cmpFn = JoinedCmp
 
   implicit val cmpL3I = new Ordering[L3I] {
-    override def compare(x: L3I, y: L3I): PartitionIdx =
+    override def compare(x: L3I, y: L3I): PartitionIndex =
       cmp3.compare(
         (
           x._1._1,
@@ -179,9 +187,9 @@ object PDC3 {
     // Sorted list of RDD names in the Spark UI is more reasonable this way.
     val N = s"e${numDigits - 1}·${n.toString.head}"
 
-    def backupAny[U: ClassTag](name: String, fn: => U): U =
+    def backupAny[U: ClassTag](name: String, fn: ⇒ U): U =
       checkpointConfig.backupPathOpt(name) match {
-        case Some(bp) =>
+        case Some(bp) ⇒
           val pathStr = s"$bp/$n/$name"
           val path = new Path(pathStr)
           if (fs.exists(path)) {
@@ -195,12 +203,12 @@ object PDC3 {
             oos.close()
             fn
           }
-        case _ => fn
+        case _ ⇒ fn
       }
 
-    def backupRDD[U: ClassTag](name: String, fn: => RDD[U]): RDD[U] =
+    def backupRDD[U: ClassTag](name: String, fn: ⇒ RDD[U]): RDD[U] =
       (checkpointConfig.backupPathOpt(name) match {
-        case Some(bp) =>
+        case Some(bp) ⇒
           val pathStr = s"$bp/$n/$name"
           val path = new Path(pathStr)
           val donePath = new Path(s"$pathStr.done")
@@ -218,10 +226,12 @@ object PDC3 {
                     None
                 )
 
-            fs.create(donePath).writeLong(1L)
+            val donePathOut = fs.create(donePath)
+            donePathOut.writeLong(1L)
+            donePathOut.close()
             rdd
           }
-        case _ =>
+        case _ ⇒
           fn
       })
       .setName(s"$N-$name")
@@ -246,20 +256,25 @@ object PDC3 {
 
     progress("SA", t)
 
-    val ti = backupRDD("ti", tiOpt.getOrElse(t.zipWithIndex()))
+    val ti = backupRDD("ti", tiOpt.getOrElse(t.lazyZipWithIndex))
 
     progress("ti", ti)
 
+    // Form each element into a triplet with the two elements that follow it, zipWithIndex those, and drop the ones
+    // whose index is 0 (mod 3).
     val tuples: RDD[L3I] =
       if (n / t.getNumPartitions < 2)
+        // `sliding3` below currently throws when there are partitions with fewer than 2 elements, so in the case that
+        // the number of elements is less than twice the number of partitions (meaning some partition necessarily has <2
+        // elements) we do a full shuffle to get the "lagged self-join" that we seek.
         backupRDD(
           "tuples",
           (for {
-            (e, i) <- ti
-            j <- i-2 to i
+            (e, i) ← ti
+            j ← i-2 to i
             if j >= 0 && j % 3 != 0
           } yield
-            (j, (e, i))
+            j → (e, i)
           )
           .setName(s"$N-flatmapped")
           .groupByKey()
@@ -269,9 +284,9 @@ object PDC3 {
               .toList
               .sortBy(_._2)
               .map(_._1) match {
-                case e1 :: Nil => (e1, 0L, 0L)
-                case e1 :: e2 :: Nil => (e1, e2, 0L)
-                case es => (es(0), es(1), es(2))
+                case e1 :: Nil ⇒ (e1, 0L, 0L)
+                case e1 :: e2 :: Nil ⇒ (e1, e2, 0L)
+                case es ⇒ (es(0), es(1), es(2))
               }
           )
           .setName(s"$N-list->tupled;zero-padded")
@@ -282,10 +297,12 @@ object PDC3 {
           "sliding",
           t
             .sliding3(0)
-            .zipWithIndex
+            .lazyZipWithIndex
             .filter(_._2 % 3 != 0)
         )
 
+    // 0's are considered to be sentinels, with each one distinct and lexicographically ordered according to its
+    // position in the collection. We want to make sure there is
     val padded =
       if (n % 3 == 0)
         tuples ++ t.context.parallelize(((0L, 0L, 0L), n+1) :: Nil)
@@ -294,53 +311,42 @@ object PDC3 {
       else
         tuples ++ t.context.parallelize(((0L, 0L, 0L), n) :: Nil)
 
-//    val padded =
-//      if (n % 3 == 0)
-//        tuples ++ t.context.parallelize(((0L, 0L, 0L), n+1) :: Nil)
-//      else
-//        tuples ++ t.context.parallelize(((0L, 0L, 0L), n) :: Nil)
-
-    // All [12]%3 triplets and indexes, sorted.
+    // All [12]%3 triplets and indexes, sorted by `cmpL3I` above.
     val S: RDD[L3I] = backupRDD("S", padded.sort())
 
     progress("S", S)
 
-    def name(s: RDD[L3I], N: String): (Boolean, RDD[(L, Name)]) = {
+    /**
+     * "Name" the tuples in the RDD [[S]] above.
+     *
+     * "Name"s here are just integers, with the property that the ordering of the input elements corresponds to
+     * increasing element-"name"s, and two elements' names are equal iff the elements themselves are equal.
+     *
+     * @param s input RDD: 3 consecutive elements from the top-level RDD [[t]], mapped to one RDD-index ([[Long]]).
+     * @return Each element's initial RDD-index value from above, as well as its "name" (one [[Long]] that represents
+     *         its [[Tuple3]]'s place in an ordering of all the RDD-elements' [[Tuple3]]s.
+     */
+    def name(s: RDD[L3I]): (Boolean, RDD[(L, Name)]) = {
 
-      val namedTupleRDD: RDD[(Name, L3, L)] =
-        s.mapPartitions { iter =>
-          var prevTuples = ArrayBuffer[(Name, L3, L)]()
-          var prevTuple: Option[(Name, L3, L)] = None
-
-          iter.foreach { cur =>
-            val (curTuple, curIdx) = cur
-            val curName =
-              prevTuple match {
-                case Some((prevName, prevLastTuple, prevLastIdx)) =>
-                  if (equivalentTuples(prevLastTuple, curTuple))
-                    prevName
-                  else
-                    prevName + 1
-                case None => 0L
-              }
-
-            prevTuple = Some((curName, curTuple, curIdx))
-            prevTuples += ((curName, curTuple, curIdx))
-          }
-
-          prevTuples.toIterator
-        }
+      val namedTupleRDD: RDD[(Name, L3, L)] = s.mapPartitions(it ⇒ new NamingIterator(it).name())
 
       var foundDupes = false
 
       val named =
-        backupRDD[(L, Long)](
+        backupRDD[(L, Name)](
           "named",
           {
-            val lastTuplesRDD: RDD[NameTuple] =
+            // For each non-empty partition, collect to the driver a tuple containing:
+            //
+            //   - partition index
+            //   - last "name" in that partition
+            //   - partition size
+            //   - first tuple
+            //   - last tuple
+            val lastTuples: Array[NameTuple] =
               namedTupleRDD
-                .mapPartitionsWithIndex {
-                  (partitionIdx, iter) =>
+                .mapPartitionsWithIndex(
+                  (partitionIdx, iter) ⇒
                     if (iter.hasNext) {
                       var last: (Name, L3, L) = iter.next
                       val firstTuple = last._2
@@ -353,90 +359,126 @@ object PDC3 {
 
                       val (lastName, lastTuple, _) = last
 
-                      Array((partitionIdx, lastName, len.toLong, firstTuple, lastTuple)).toIterator
+                      Iterator((partitionIdx, lastName, len.toLong, firstTuple, lastTuple))
                     } else
                       Iterator()
-                }
+                )
+                .collect
 
-            val lastTuples = lastTuplesRDD.collect.sortBy(_._1)
+            var partitionStartIdxsMap = mutable.Map[PartitionIndex, Name]()
 
-            var partitionStartIdxs = ArrayBuffer[(PartitionIdx, Name)]()
-            var prevEndCount = 1L
+            // First name
+            var prevEndName = Name(1L)
             var prevLastTupleOpt: Option[L3] = None
 
             for {
-              (partitionIdx, curCount, partitionCount, curFirstTuple, curLastTuple) <- lastTuples
+              (partitionIdx, lastName, partitionSize, firstTuple, lastTuple) ← lastTuples
             } {
-              val curStartCount =
-                if (prevLastTupleOpt.exists(!equivalentTuples(_, curFirstTuple)))
-                  prevEndCount + 1
+              val partitionStartName =
+                if (prevLastTupleOpt.exists(!equivalentTuples(_, firstTuple)))
+                  prevEndName.next
                 else
-                  prevEndCount
+                  prevEndName
 
-              prevEndCount = curStartCount + curCount
+              prevEndName = partitionStartName + lastName
               if (!foundDupes &&
-                ((curCount + 1 != partitionCount) ||
-                  prevLastTupleOpt.exists(equivalentTuples(_, curFirstTuple)))) {
+                ((lastName.next.name != partitionSize) ||
+                  prevLastTupleOpt.exists(equivalentTuples(_, firstTuple)))) {
                 foundDupes = true
               }
-              prevLastTupleOpt = Some(curLastTuple)
-              partitionStartIdxs += ((partitionIdx, curStartCount))
+              prevLastTupleOpt = Some(lastTuple)
+              partitionStartIdxsMap(partitionIdx) = partitionStartName
             }
 
             foundDupes = backupAny[Boolean]("foundDupes", foundDupes)
 
-            val partitionStartIdxsBroadcast = s.sparkContext.broadcast(partitionStartIdxs.toMap)
+            // RDD with one element per non-empty partition, to zip-distribute.
+            val partitionStartIdxsRDD =
+              sc.parallelize(
+                (0 until namedTupleRDD.getNumPartitions)
+                  .map(partitionStartIdxsMap.get),
+                numSlices = namedTupleRDD.getNumPartitions
+              )
 
             namedTupleRDD
-              .mapPartitionsWithIndex {
-                (partitionIdx, iter) =>
-                  partitionStartIdxsBroadcast.value.get(partitionIdx) match {
-                    case Some(partitionStartName) =>
-                      for {
-                        (name, _, idx) <- iter
-                      } yield
-                        (idx, partitionStartName + name)
-                    case _ =>
-                      if (iter.nonEmpty)
+              .zipPartitionsWithIndex(partitionStartIdxsRDD)(
+                (partitionIdx, iter, startIdxIter) ⇒
+                  (iter.hasNext, startIdxIter.nextOption.flatten) match {
+                      case (_, Some(partitionStartName)) ⇒
+                        for {
+                          (name, _, idx) ← iter
+                        } yield
+                          (idx, partitionStartName + name)
+                      case (true, _) ⇒
                         throw new Exception(
                           List(
                             s"No partition start idxs found for partition $partitionIdx:",
-                            partitionStartIdxsBroadcast.value.toList.map(p => s"${p._1} -> ${p._2}").mkString("\t", "\n\t", ""),
                             iter.take(100).mkString(",")
                           )
                           .mkString("\n\n")
                         )
-                      else
-                        Nil.toIterator
-                  }
-              }
+                      case _ ⇒
+                          Iterator()
+                    }
+              )
           }
         )
 
       (foundDupes, named)
     }
 
+    // The number of elements whose index is 1 (mod 3).
     val n1 = (n + 1)/3 +
       (n % 3 match {
-        case 0|1 => 1
-        case 2 => 0
+        case 0|1 ⇒ 1
+        case 2 ⇒ 0
       })
 
+    // The number of elements whose index is 2 (mod 3).
     val n2 = (n + 1) / 3
 
+    /**
+     * [[P]] will have all [12]%3-indices from [[t]], paired with their suffix-ranks (1 through ([[n1]]+[[n2]]))
+     * relative to the others in that set.
+     */
     val P: RDD[(L, Name)] =
       backupRDD(
         "P",
         {
-          val (foundDupes, named) = name(S, N)
+          val (foundDupes, named) = name(S)
           progress("named", named)
 
-          if (foundDupes) {
+          if (!foundDupes)
+            named.sortByKey()
+          else {
+            /**
+             *
+             * If there are duplicates in the triplet-RDD, we'll have to recurse on triplets of the triplet-names
+             * (equivalent to moving to comparing 9-element subsequences anchored at each element).
+             *
+             * To start, re-sort the [[named]] RDD (containing all [12]%3 indices and their [[Name]]s) so that all 1%3
+             * indices are shifted to occupy the first contiguous half of the new RDD, and the 2%3 indices occupy the
+             * second half (preserving the relative order among each half's elements).
+             */
             val onesThenTwos =
               backupRDD(
                 "ones-then-twos",
                 named
-                  .map(p => ((p._1 % 3, p._1 / 3), p._2))
+                  .map {
+                    case (idx, name) ⇒
+                      // This [[Tuple2]] key is introduced only for sorting below, putting all 1%3's ahead of all 2%3's
+                      // (and preserving each group's internal order), and then dropped.
+                      (idx % 3, idx / 3) →
+                        (
+                          name.name,
+                          // After the sort described above, this will be the index of this element, saving us a
+                          // `zipWithIndex` later.
+                          if (idx % 3 == 1)
+                            idx / 3
+                          else
+                            n1 + (idx / 3)
+                        )
+                  }
                   .setName(s"$N-mod-div-keyed")
                   .sortByKey(numPartitions = ((n1 + n2) / target).toInt)
                   .setName(s"$N-mod-div-sorted")
@@ -445,10 +487,14 @@ object PDC3 {
 
             progress("onesThenTwos", onesThenTwos)
 
+            /**
+             * [[SA12]] is the suffix-array of [[onesThenTwos]]; the former's values are a permutation of the latter's
+             * indices.
+             */
             val SA12: RDD[L] =
               saImpl(
-                Some(onesThenTwos),
                 None,
+                Some(onesThenTwos),
                 n1 + n2,
                 target,
                 startTime,
@@ -459,19 +505,29 @@ object PDC3 {
             progress("SA12", SA12)
 
             SA12
-            .zipWithIndex().setName(s"$N-SA12-zipped")
-            .map(p => {
-              (
-                if (p._1 < n1)
-                  3 * p._1 + 1
-                else
-                  3 * (p._1 - n1) + 2,
-                p._2 + 1
-              )
-            }).setName(s"$N-indices-remapped")
-            .sortByKey()
-          } else {
-            named.sortByKey()
+              .lazyZipWithIndex
+              .setName(s"$N-SA12-zipped")
+              .map {
+                /** For each [[onesThenTwos]] index and its suffix-rank… */
+                case (ottIdx, rank) ⇒
+                  (
+                    /**
+                     * Map the [[onesThenTwos]] index in back to an index from the original ([[t]]/[[ti]]) array:
+                     *
+                     *   - the first [[n1]] elements of [[onesThenTwos]] were the 1%3 indices from [[t]]
+                     *   - the latter [[n2]] elements of [[onesThenTwos]] were the 2%3 indices from [[t]].
+                     */
+                    if (ottIdx < n1)
+                      3 * ottIdx + 1
+                    else
+                      3 * (ottIdx - n1) + 2,
+
+                    /** Include 1-based [[Name]]s (suffix-ranks) with each [[t]]-index above. */
+                    Name(rank + 1)
+                  )
+              }
+              .setName(s"$N-indices-remapped")
+              .sortByKey()
           }
         }
       )
@@ -482,22 +538,22 @@ object PDC3 {
       backupRDD(
         "keyedP",
         (for {
-          (idx, name) <- P
-          i <- idx-2 to idx
+          (idx, Name(name)) ← P
+          i ← idx-2 to idx
           if i >= 0 && i < n
         } yield {
           val joined =
             (i % 3, idx - i) match {
-              case (0, 1) => Joined(n0O = Some(name))
-              case (0, 2) => Joined(n1O = Some(name))
-              case (1, 0) => Joined(n0O = Some(name))
-              case (1, 1) => Joined(n1O = Some(name))
-              case (2, 0) => Joined(n0O = Some(name))
-              case (2, 2) => Joined(n1O = Some(name))
-              case _ => throw new Exception(s"Invalid (idx,i): ($idx,$i); $name")
+              case (0, 1) ⇒ Joined(n0O = Some(name))
+              case (0, 2) ⇒ Joined(n1O = Some(name))
+              case (1, 0) ⇒ Joined(n0O = Some(name))
+              case (1, 1) ⇒ Joined(n1O = Some(name))
+              case (2, 0) ⇒ Joined(n0O = Some(name))
+              case (2, 2) ⇒ Joined(n1O = Some(name))
+              case _ ⇒ throw new Exception(s"Invalid (idx,i): ($idx,$i); $name")
             }
 
-          i -> joined
+          i → joined
         })
         .setName(s"$N-keyedP")
         .reduceByKey(Joined.merge _, numPartitions = t.getNumPartitions)
@@ -509,22 +565,26 @@ object PDC3 {
       backupRDD(
         "keyedT",
         (for {
-          (e, i) <- ti
-          start = if (i % 3 == 2) i else i-1
-          j <- start to i
+          (e, i) ← ti
+          start =
+            if (i % 3 == 2)
+              i
+            else
+              i-1
+          j ← start to i
           if j >= 0
         } yield {
           val joined =
             (j % 3, i - j) match {
-              case (0, 0) => Joined(t0O = Some(e))
-              case (0, 1) => Joined(t1O = Some(e))
-              case (1, 0) => Joined(t0O = Some(e))
-              case (2, 0) => Joined(t0O = Some(e))
-              case (2, 1) => Joined(t1O = Some(e))
-              case _ => throw new Exception(s"Invalid (i,j): ($i,$j); $e")
+              case (0, 0) ⇒ Joined(t0O = Some(e))
+              case (0, 1) ⇒ Joined(t1O = Some(e))
+              case (1, 0) ⇒ Joined(t0O = Some(e))
+              case (2, 0) ⇒ Joined(t0O = Some(e))
+              case (2, 1) ⇒ Joined(t1O = Some(e))
+              case _ ⇒ throw new Exception(s"Invalid (i,j): ($i,$j); $e")
             }
 
-          j -> joined
+          j → joined
         })
         .setName(s"$N-keyedT")
         .reduceByKey(Joined.merge)
@@ -532,8 +592,19 @@ object PDC3 {
 
     progress("keyedT", keyedT)
 
-    val joined = backupRDD("joined", keyedT.join(keyedP).mapValues(Joined.mergeT))
-    //val joined = (keyedT ++ keyedP).setName(s"$N-keyed-T+P").reduceByKey(Joined.merge).setName(s"$N-joined")
+    val joined =
+      backupRDD(
+        "joined",
+        keyedT
+          .join(keyedP)
+          .mapValues(Joined.mergeT)
+      )
+
+//    val joined =
+//      (keyedT ++ keyedP)
+//        .setName(s"$N-keyed-T+P")
+//        .reduceByKey(Joined.merge)
+//        .setName(s"$N-joined")
 
     progress("joined", joined)
 
@@ -557,19 +628,10 @@ object PDC3 {
     pl("Returning")
     sorted
   }
-}
 
-class PDC3Registrar extends KryoRegistrator {
-  override def registerClasses(kryo: Kryo): Unit = {
-    kryo.register(classOf[Joined])
+  def register(kryo: Kryo): Unit = {
     kryo.register(classOf[Name])
-    kryo.register(Class.forName("scala.reflect.ClassTag$$anon$1"))
-    kryo.register(classOf[mutable.WrappedArray.ofRef[_]])
-    kryo.register(classOf[mutable.WrappedArray.ofLong])
-    kryo.register(classOf[mutable.WrappedArray.ofByte])
-    kryo.register(classOf[java.lang.Class[_]])
-    kryo.register(classOf[Array[String]])
-    kryo.register(classOf[Array[Int]])
-    kryo.register(Class.forName("scala.collection.immutable.Map$EmptyMap$"))
   }
 }
+
+

@@ -1,6 +1,6 @@
 package org.hammerlab.suffixes.pdc3
 
-import org.hammerlab.suffixes.pdc3.PDC3.{L, OL}
+import org.hammerlab.suffixes.pdc3.PDC3.OL
 
 case class Joined(t0O: OL = None,
                   t1O: OL = None,
@@ -16,7 +16,7 @@ case class Joined(t0O: OL = None,
 
 object Joined {
   def merge(j1: Joined, j2: Joined): Joined = {
-    def get(fn: Joined => OL): OL =
+    def get[T](fn: Joined ⇒ Option[T]): Option[T] =
       (fn(j1), fn(j2)) match {
         case (Some(f1), Some(f2)) =>
           throw new Exception(s"Merge error: $j1 $j2")

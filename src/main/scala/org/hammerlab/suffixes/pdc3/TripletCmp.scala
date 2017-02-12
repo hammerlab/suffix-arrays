@@ -3,6 +3,9 @@ package org.hammerlab.suffixes.pdc3
 import org.hammerlab.suffixes.pdc3.PDC3.L
 import Utils.longToCmpFnReturn
 
+/**
+ * Compare
+ */
 object TripletCmp extends Ordering[(L, L, L, L)] {
   override def compare(x: (L, L, L, L), y: (L, L, L, L)): Int =
     longToCmpFnReturn(

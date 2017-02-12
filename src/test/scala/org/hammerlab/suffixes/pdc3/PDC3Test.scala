@@ -1,12 +1,12 @@
 package org.hammerlab.suffixes.pdc3
 
 import org.apache.spark.rdd.RDD
-import org.hammerlab.suffixes.base.{ SuffixArrayBAMTest, SuffixArrayTest }
 import org.hammerlab.spark.test.suite.KryoSparkSuite
+import org.hammerlab.suffixes.base.{ SuffixArrayBAMTest, SuffixArrayTest }
 import org.scalatest.{ FunSuite, Matchers }
 
 class PDC3Test
-  extends KryoSparkSuite(classOf[PDC3Registrar])
+  extends KryoSparkSuite(classOf[Registrar])
     with SuffixArrayBAMTest
     with SuffixArrayTest {
 
