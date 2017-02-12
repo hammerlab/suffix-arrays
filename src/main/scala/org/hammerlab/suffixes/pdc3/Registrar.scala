@@ -17,6 +17,7 @@ class Registrar extends KryoRegistrator {
     kryo.register(classOf[java.lang.Class[_]])
     kryo.register(classOf[Array[String]])
     kryo.register(classOf[Array[Int]])
+    kryo.register(classOf[Array[Option[_]]])
     kryo.register(Class.forName("scala.collection.immutable.Map$EmptyMap$"))
   }
 }

@@ -28,7 +28,7 @@ class PDC3CmpFnTest extends FunSuite with Matchers {
   }
 
   test("basic 2-0 cmp") {
-    val t1 = (5L, Joined(t0O = Some(2), n0O = Some(1)))
+    val t1 = (5L, Joined(t0O = Some(2), t1O = Some(2), n0O = Some(1), n1O = Some(1)))
     val t2 = (3L, Joined(t0O = Some(1), t1O = Some(2), n0O = Some(2), n1O = Some(1)))
 
     cmpFn.compare(t1, t2) should be > 0

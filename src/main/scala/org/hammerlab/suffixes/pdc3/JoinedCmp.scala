@@ -28,8 +28,18 @@ object JoinedCmp extends Ordering[(Long, Joined)] {
         )
       case (0, 2) | (2, 0) ⇒
         cmp3.compare(
-          (j1.t0O.get, j1.t1O.getOrElse(0L), j1.n1O.getOrElse(0L), i1),
-          (j2.t0O.get, j2.t1O.getOrElse(0L), j2.n1O.getOrElse(0L), i2)
+          (
+            j1.t0O.get,
+            j1.t1O.get,
+            j1.n1O.getOrElse(0L),
+            i1
+          ),
+          (
+            j2.t0O.get,
+            j2.t1O.get,
+            j2.n1O.getOrElse(0L),
+            i2
+          )
         )
 
       // If both indices are ∈ [12]%3, then both their current indices have an name ranking their current position in

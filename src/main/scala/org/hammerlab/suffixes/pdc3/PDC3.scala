@@ -549,6 +549,12 @@ object PDC3 {
 
     progress("keyedP", keyedP)
 
+    val paddedTi =
+      if (n % 3 == 2)
+        ti
+      else
+        ti ++ sc.parallelize(Seq(0L → n), numSlices = 1)
+
     /**
      * Construct an [[RDD]] with every position's current and next element, with one exception: 1%3 indices don't need
      * the next element.
@@ -557,7 +563,7 @@ object PDC3 {
       backupRDD(
         "keyedT",
         (for {
-          (e, i) ← ti
+          (e, i) ← paddedTi
 
           /**
            * In general, we want to emit [[e]] keyed by [[i]] and [[i]]-1.
@@ -565,18 +571,26 @@ object PDC3 {
            * However, 1%3 positions don't need the next element in order to compare themselves to any of the equivalence
            * classes (mod 3), so we don't need to emit [[e]] for [[i-1]] when [[i]] is 2%3.
            */
-          joineds =
-            if (i % 3 == 2 || i == 0)
-              Seq(i → Joined(t0O = Some(e)))
+          curIdxJoined =
+            if (i == n)
+              Seq()
             else
-              Seq(i → Joined(t0O = Some(e)), (i - 1) → Joined(t1O = Some(e)))
+              Seq(i → Joined(t0O = Some(e)))
+
+          prevIdxJoined =
+            if (i % 3 == 2 || i == 0)
+              Seq()
+            else
+              Seq((i - 1) → Joined(t1O = Some(e)))
+
+          joineds = curIdxJoined ++ prevIdxJoined
 
           (idx, joined) ← joineds
         } yield
           idx → joined
         )
         .setName(s"$N-keyedT")
-        .reduceByKey(Joined.merge)
+        .reduceByKey(Joined.merge _, numPartitions = ti.getNumPartitions)
       )
 
     progress("keyedT", keyedT)
