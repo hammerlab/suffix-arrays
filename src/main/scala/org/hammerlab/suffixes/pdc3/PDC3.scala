@@ -58,7 +58,7 @@ object PDC3 {
   def apply(t: RDD[L],
             count: Long,
             checkpointConfig: CheckpointConfig = new CheckpointConfig()): RDD[L] =
-    withCount(
+    saImpl(
       t.setName("t").cache(),
       count,
       count / t.getNumPartitions,
@@ -71,7 +71,7 @@ object PDC3 {
                   checkpointConfig: CheckpointConfig): RDD[L] = {
     val startTime = System.currentTimeMillis()
     lastPrintedTime = startTime
-    withIndices(
+    saImpl(
       ti,
       count,
       target = count / ti.getNumPartitions,
@@ -79,34 +79,6 @@ object PDC3 {
       checkpointConfig
     )
   }
-
-  def withIndices(ti: RDD[(L, Long)],
-                  n: L,
-                  target: L,
-                  startTime: Long,
-                  checkpointConfig: CheckpointConfig): RDD[L] =
-    saImpl(
-      None,
-      Some(ti),
-      n,
-      target,
-      startTime,
-      checkpointConfig
-    )
-
-  def withCount(t: RDD[L],
-                n: L,
-                target: L,
-                startTime: Long,
-                checkpointConfig: CheckpointConfig): RDD[L] =
-    saImpl(
-      Some(t),
-      None,
-      n,
-      target,
-      startTime,
-      checkpointConfig
-    )
 
   val debug = false
 
@@ -124,7 +96,10 @@ object PDC3 {
           .groupByKey
           .collect
           .sortBy(_._1)
-          .map { case (partitionIdx, value) ⇒ s"$partitionIdx -> [ ${value.mkString(", ")} ]" }
+          .map {
+            case (partitionIdx, value) ⇒
+              s"$partitionIdx → [ ${value.mkString(", ")} ]"
+          }
 
       debugPrint(s"$name:\n\t${partitioned.mkString("\n\t")}\n")
     }
@@ -169,14 +144,15 @@ object PDC3 {
       )
   }
 
-  def saImpl(tOpt: Option[RDD[L]],
-             tiOpt: Option[RDD[(L, Long)]],
+  def saImpl(rdds: RDDPair[L],
              n: L,
              target: L,
              startTime: Long,
              checkpointConfig: CheckpointConfig): RDD[L] = {
 
-    val sc = tOpt.orElse(tiOpt).get.context
+    val RDDPair(t, ti) = rdds
+
+    val sc = rdds.sc
     val fs = FileSystem.get(sc.hadoopConfiguration)
 
     val phaseStart = System.currentTimeMillis()
@@ -241,11 +217,9 @@ object PDC3 {
       lastPrintedTime = System.currentTimeMillis()
     }
 
-    val numPartitions = tOpt.orElse(tiOpt).get.getNumPartitions
+    val numPartitions = rdds.numPartitions
 
     pl(s"PDC3: $target ($n/$numPartitions)")
-
-    lazy val t = tOpt.getOrElse(tiOpt.get.keys)
 
     if (n <= target || numPartitions == 1) {
       val r = t.map(_.toInt).collect()
@@ -255,10 +229,6 @@ object PDC3 {
     }
 
     progress("SA", t)
-
-    val ti = backupRDD("ti", tiOpt.getOrElse(t.lazyZipWithIndex))
-
-    progress("ti", ti)
 
     // Form each element into a triplet with the two elements that follow it, zipWithIndex those, and drop the ones
     // whose index is 0 (mod 3).
@@ -365,7 +335,7 @@ object PDC3 {
                 )
                 .collect
 
-            var partitionStartIdxsMap = mutable.Map[PartitionIndex, Name]()
+            val partitionStartIdxsMap = mutable.Map[PartitionIndex, Name]()
 
             // First name
             var prevEndName = Name(1L)
@@ -493,8 +463,7 @@ object PDC3 {
              */
             val SA12: RDD[L] =
               saImpl(
-                None,
-                Some(onesThenTwos),
+                RDDPair(onesThenTwos),
                 n1 + n2,
                 target,
                 startTime,
@@ -510,21 +479,23 @@ object PDC3 {
               .map {
                 /** For each [[onesThenTwos]] index and its suffix-rank… */
                 case (ottIdx, rank) ⇒
-                  (
-                    /**
-                     * Map the [[onesThenTwos]] index in back to an index from the original ([[t]]/[[ti]]) array:
-                     *
-                     *   - the first [[n1]] elements of [[onesThenTwos]] were the 1%3 indices from [[t]]
-                     *   - the latter [[n2]] elements of [[onesThenTwos]] were the 2%3 indices from [[t]].
-                     */
+
+                  /**
+                   * Map the [[onesThenTwos]] index in back to an index from the original ([[t]]/[[ti]]) array:
+                   *
+                   *   - the first [[n1]] elements of [[onesThenTwos]] were the 1%3 indices from [[t]]
+                   *   - the latter [[n2]] elements of [[onesThenTwos]] were the 2%3 indices from [[t]].
+                   */
+                  val originalIdx =
                     if (ottIdx < n1)
                       3 * ottIdx + 1
                     else
-                      3 * (ottIdx - n1) + 2,
+                      3 * (ottIdx - n1) + 2
 
-                    /** Include 1-based [[Name]]s (suffix-ranks) with each [[t]]-index above. */
-                    Name(rank + 1)
-                  )
+                  /** Include 1-based [[Name]]s (suffix-ranks) with each [[t]]-index above. */
+                  val name = Name(rank + 1)
+
+                  originalIdx → name
               }
               .setName(s"$N-indices-remapped")
               .sortByKey()
@@ -534,20 +505,37 @@ object PDC3 {
 
     progress("P", P)
 
+    /**
+     * Construct an [[RDD]] where every index `I` from the original [[RDD]] is mapped to a [[Joined]] with the two
+     * succeeding named [12]%3 elements (starting with the one at `I`, in the case that `I` is 1 or 2 (mod 3).
+     */
     val keyedP: RDD[(L, Joined)] =
       backupRDD(
         "keyedP",
         (for {
+          /**
+           * For each [12]%3 index and its [[Name]] (which orders its suffix relative to those of all other [12]%3
+           * indices).
+           */
           (idx, Name(name)) ← P
+
+          /** The current [[Name]] may be relative from two elements back through the current position. */
           i ← idx-2 to idx
+
+          /** Only emit data at valid indices. */
           if i >= 0 && i < n
         } yield {
           val joined =
             (i % 3, idx - i) match {
+              // The succeeding two named elements from 0%3 indices are 1 and 2 spaces ahead.
               case (0, 1) ⇒ Joined(n0O = Some(name))
               case (0, 2) ⇒ Joined(n1O = Some(name))
+
+              // The succeeding two named elements from 1%3 indices are the current and next elements.
               case (1, 0) ⇒ Joined(n0O = Some(name))
               case (1, 1) ⇒ Joined(n1O = Some(name))
+
+              // The succeeding two named elements from 2%3 indices are the current and 2-ahead elements.
               case (2, 0) ⇒ Joined(n0O = Some(name))
               case (2, 2) ⇒ Joined(n1O = Some(name))
               case _ ⇒ throw new Exception(s"Invalid (idx,i): ($idx,$i); $name")
@@ -561,31 +549,32 @@ object PDC3 {
 
     progress("keyedP", keyedP)
 
+    /**
+     * Construct an [[RDD]] with every position's current and next element, with one exception: 1%3 indices don't need
+     * the next element.
+     */
     val keyedT: RDD[(L, Joined)] =
       backupRDD(
         "keyedT",
         (for {
           (e, i) ← ti
-          start =
-            if (i % 3 == 2)
-              i
-            else
-              i-1
-          j ← start to i
-          if j >= 0
-        } yield {
-          val joined =
-            (j % 3, i - j) match {
-              case (0, 0) ⇒ Joined(t0O = Some(e))
-              case (0, 1) ⇒ Joined(t1O = Some(e))
-              case (1, 0) ⇒ Joined(t0O = Some(e))
-              case (2, 0) ⇒ Joined(t0O = Some(e))
-              case (2, 1) ⇒ Joined(t1O = Some(e))
-              case _ ⇒ throw new Exception(s"Invalid (i,j): ($i,$j); $e")
-            }
 
-          j → joined
-        })
+          /**
+           * In general, we want to emit [[e]] keyed by [[i]] and [[i]]-1.
+           *
+           * However, 1%3 positions don't need the next element in order to compare themselves to any of the equivalence
+           * classes (mod 3), so we don't need to emit [[e]] for [[i-1]] when [[i]] is 2%3.
+           */
+          joineds =
+            if (i % 3 == 2 || i == 0)
+              Seq(i → Joined(t0O = Some(e)))
+            else
+              Seq(i → Joined(t0O = Some(e)), (i - 1) → Joined(t1O = Some(e)))
+
+          (idx, joined) ← joineds
+        } yield
+          idx → joined
+        )
         .setName(s"$N-keyedT")
         .reduceByKey(Joined.merge)
       )
