@@ -107,12 +107,12 @@ object DC3 {
 
     // Populate s12 with all [12]%3 indices in s, e.g. [1, 2, 4, 5, 7, 8, ...)
     var j = 0
-    (0 until (n + (if (n % 3 > 0) 1 else 0))).foreach(i => {
+    (0 until (n + (if (n % 3 > 0) 1 else 0))).foreach { i =>
       if (i % 3 != 0) {
         s12(j) = i
         j += 1
       }
-    })
+    }
 
     // These radix passes have the net effect of sorting the [12]%3 s-indices by the s-triplets that they anchor.
 
