@@ -271,22 +271,73 @@ object PDC3 {
             .filter(_._2 % 3 != 0)
         )
 
-    // 0's are considered to be sentinels, with each one distinct and lexicographically ordered according to its
-    // position in the collection. We want to make sure there is
+    /**
+     * We will recursively build a suffix-array on indices that are 1 or 2 (mod 3).
+     *
+     * For every index `i` in [0, n), we want at least two such indices to exist at positions ≥ `i`, for the
+     * difference-cover comparison later on.
+     *
+     * Here we append 1 or 2 triplets (full of sentinel zeroes) to the [[tuples]] collection, such that:
+     *
+     *   - it still contains only indices that are 1 or 2 (mod 3), and
+     *   - it will include [[n]] and/or [[n]]+1 in the recursively-determined suffix-ranking of [12]%3 indices, so that
+     *     every position ∈ [0, n) in the original collection [[t]] will be able to be joined with two succeeding ranked
+     *     positions, as required by the difference-cover-based comparison found in [[JoinedCmp]].
+     */
     val padded =
       tuples ++
         t.context.parallelize(
           if (n % 3 == 0)
+            /**
+             * The last element's index, [[n]]-1, is 2 (mod 3), meaning its [[Joined.n1O]] will be at the subsequent
+             * 1 (mod 3) position, which is [[n]]+1 when [[n]] is 0 (mod 3).
+             */
             ((0L, 0L, 0L), n+1) :: Nil
           else if (n % 3 == 1)
-            ((0L, 0L, 0L), n) :: Nil
+            /**
+             * The last element's index, [[n]]-1, is 0 (mod 3), meaning its [[Joined.n0O]] and [[Joined.n1O]] will be at
+             * [[n]] and [[n]]+1, resp., which therefore must be added here and ranked in the recursive step.
+             */
+            ((0L, 0L, 0L), n) :: ((0L, 0L, 0L), n+1) :: Nil
           else
+            /**
+             * The last element's index, [[n]]-1, is 1 (mod 3), meaning its [[Joined.n1O]] will be at [[n]], which we
+             * include here accordingly.
+             */
             ((0L, 0L, 0L), n) :: Nil
           ,
           numSlices = 1
         )
 
-    // All [12]%3 triplets and indexes, sorted by `cmpL3I` above.
+    /**
+     * The number of elements in [[padded]] whose index is 1 (mod 3).
+     *
+     * When n is 0 or 1 (mod 3):
+     *   - the indices [0, n) contain n/3 (integer division) indices that are 1 (mod 3).
+     *   - the "padding" tuples we append to [[tuples]] to create [[padded]] include a 1%3.
+     *   So we get n/3 + 1 1%3 entries.
+     *
+     * When n is 2 (mod 3), [0, n) contains n/3 + 1 such indices, and none are added as padding.
+     */
+    val n1 = n/3 + 1
+
+    /**
+     * The number of elements in [[padded]] whose index is 2 (mod 3).
+     *
+     * The indices [0, n) contain n/3 (integer division) indices that are 2 (mod 3).
+     *
+     * When [[n]] is 1 or 2 (mod 3), [[padded]] receives an extra element at a 2%3 index, so we add one in those cases.
+     */
+    val n2 =
+      n/3 +
+        (
+          if (n % 3 == 0)
+            0
+          else
+            1
+        )
+
+    /** All [12]%3 triplets and indexes, sorted by [[cmpL3I]] above. */
     val S: RDD[L3I] = backupRDD("S", padded.sort())
 
     progress("S", S)
@@ -303,6 +354,7 @@ object PDC3 {
      */
     def name(s: RDD[L3I]): (Boolean, RDD[(L, Name)]) = {
 
+      // "Name" tuples within each partition.
       val namedTupleRDD: RDD[(Name, L3, L)] = s.mapPartitions(it ⇒ new NamingIterator(it).name())
 
       var foundDupes = false
@@ -401,16 +453,6 @@ object PDC3 {
 
       (foundDupes, named)
     }
-
-    // The number of elements whose index is 1 (mod 3).
-    val n1 = (n + 1)/3 +
-      (n % 3 match {
-        case 0|1 ⇒ 1
-        case 2 ⇒ 0
-      })
-
-    // The number of elements whose index is 2 (mod 3).
-    val n2 = (n + 1) / 3
 
     /**
      * [[P]] will have all [12]%3-indices from [[t]], paired with their suffix-ranks (1 through ([[n1]]+[[n2]]))

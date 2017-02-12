@@ -13,31 +13,31 @@ object JoinedCmp extends Ordering[(Long, Joined)] {
     (i1 % 3, i2 % 3) match {
       case (0, 0) ⇒
         cmp2.compare(
-          (j1.t0O.get, j1.n0O.getOrElse(0L), i1),
-          (j2.t0O.get, j2.n0O.getOrElse(0L), i2)
+          (j1.t0O.get, j1.n0O.get, i1),
+          (j2.t0O.get, j2.n0O.get, i2)
         )
       case (0, 1) ⇒
         cmp2.compare(
-          (j1.t0O.get, j1.n0O.getOrElse(0L), i1),
-          (j2.t0O.get, j2.n1O.getOrElse(0L), i2)
+          (j1.t0O.get, j1.n0O.get, i1),
+          (j2.t0O.get, j2.n1O.get, i2)
         )
       case (1, 0) ⇒
         cmp2.compare(
-          (j1.t0O.get, j1.n1O.getOrElse(0L), i1),
-          (j2.t0O.get, j2.n0O.getOrElse(0L), i2)
+          (j1.t0O.get, j1.n1O.get, i1),
+          (j2.t0O.get, j2.n0O.get, i2)
         )
       case (0, 2) | (2, 0) ⇒
         cmp3.compare(
           (
             j1.t0O.get,
             j1.t1O.get,
-            j1.n1O.getOrElse(0L),
+            j1.n1O.get,
             i1
           ),
           (
             j2.t0O.get,
             j2.t1O.get,
-            j2.n1O.getOrElse(0L),
+            j2.n1O.get,
             i2
           )
         )
