@@ -681,6 +681,7 @@ object PDC3 {
   }
 
   def register(kryo: Kryo): Unit = {
+    kryo.register(classOf[Joined])
     kryo.register(classOf[Name])
   }
 }
