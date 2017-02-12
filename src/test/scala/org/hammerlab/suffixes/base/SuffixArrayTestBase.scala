@@ -1,5 +1,7 @@
 package org.hammerlab.suffixes.base
 
+import java.io.{ PrintWriter, File ⇒ JFile }
+
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.hammerlab.suffixes.base.Utils.{ toC, toI }
@@ -12,13 +14,14 @@ trait SuffixArrayTestBase extends FunSuite with Matchers {
   def intsFromFile(file: String): Array[Int] = {
     val inPath = File(file).path
     (for {
-      line <- scala.io.Source.fromFile(inPath).getLines()
+      line ← scala.io.Source.fromFile(inPath).getLines()
       if line.trim.nonEmpty
-      s <- line.split(",")
+      s ← line.split("[,\t]")
       i = s.trim().toInt
     } yield
       i
-    ).toArray
+    )
+    .toArray
   }
 }
 
@@ -28,9 +31,9 @@ trait SuffixArrayRDDTest
   def rdd(r: RDD[Byte]): RDD[Int]
 }
 
-trait SuffixArrayBAMTest extends SuffixArrayRDDTest {
-
-  def checkArrays(actual: Array[Long], expected: Array[Long]): Unit = {
+trait CheckArrays {
+  self: Matchers ⇒
+  def checkArrays(actual: Array[Int], expected: Array[Int]): Unit = {
     actual.length should be(expected.length)
     for {
       idx ← actual.indices
@@ -38,14 +41,102 @@ trait SuffixArrayBAMTest extends SuffixArrayRDDTest {
       expectedElem = expected(idx)
     } {
       withClue(
-        s", idx $idx: ${actual.slice(idx - 5, idx + 5).mkString(",")} vs. ${expected.slice(idx - 5, idx + 5).mkString(",")}"
+        ", idx %d: %s vs. %s"
+        .format(
+          idx,
+          actual.slice(idx - 5, idx + 5).mkString(","),
+          expected.slice(idx - 5, idx + 5).mkString(",")
+        )
       ) {
         actualElem should be(expectedElem)
       }
     }
   }
+}
 
-  def testBam(num: Int, numPartitions: Int): Unit = {
+trait SuffixArrayBAMTest
+  extends SuffixArrayTestBase
+    with CheckArrays {
+
+  def check(num: Int, sa: Array[Int], ts: Array[Int]): Unit = {
+    val expectedSA = intsFromFile(s"$num.sa")
+    checkArrays(sa, expectedSA)
+
+    val expectedTS = intsFromFile(s"$num.ts")
+    checkArrays(ts, expectedTS)
+  }
+
+  def testBam(num: Int): Unit
+
+  for { i ← (1 to 5) ++ Seq(10, 20, 100, 1000) } {
+    testBam(i)
+  }
+}
+
+trait SuffixArrayArrayBAMTest
+  extends SuffixArrayBAMTest {
+
+  def write(path: String,
+            arr: Array[Int],
+            numPerLine: Int = 10): Unit = {
+    val pw = new PrintWriter(new JFile(path))
+    arr.grouped(10).map(_.mkString("", "\t", "\n")).foreach(pw.write)
+    pw.close()
+  }
+
+  def testBam(num: Int): Unit = {
+    val name = s"bam-$num"
+    test(name) {
+
+      // Take `num` reads from the start of `1000.reads`, append a sentinel '$' to each, map to integers, and
+      // distribute.
+      val ts =
+        scala.io.Source
+          .fromFile(File("1000.reads").path)
+          .getLines()
+          .take(num)
+          .flatMap(_ + '$')
+          .map(toI(_).toInt)
+          .toArray
+
+      // Sanity-check the first 10 elements.
+      ts.take(10).map(i ⇒ toC(i.toByte)).mkString("") should be("ATTTTTAAGA")
+
+      val totalLength = 101 * num
+      ts.length should be(totalLength)
+
+      val sa = arr(ts, 6)
+      sa.length should be(totalLength)
+
+      // The first `num` elements of the suffix-array should point to the positions of the `num` sentinel values from
+      // the input data, which were every 101st character (each "read" line in the input was 100 bases long).
+      sa.take(num) should be(1 to num map (_ * 101 - 1) toArray)
+
+      // Set to true to overwrite the existing "expected" file that SAs will be vetted against.
+      val writeMode = false
+
+      if (writeMode) {
+        write(s"src/test/resources/$num.sa", sa)
+        write(s"src/test/resources/$num.ts", ts)
+      } else {
+        check(num, sa, ts)
+      }
+    }
+  }
+}
+
+trait SuffixArrayBamRDDTest
+  extends SuffixArrayBAMTest
+    with SuffixArrayRDDTest {
+
+  def testBam(num: Int): Unit = {
+
+    def numPartitions =
+      if (num < 10)
+        4
+      else
+        10
+
     val name = s"bam-$num-$numPartitions"
     test(name) {
 
@@ -57,7 +148,8 @@ trait SuffixArrayBAMTest extends SuffixArrayRDDTest {
             .textFile(File("1000.reads").path, numPartitions)
             .take(num)
             .flatMap(_ + '$')
-            .map(toI),
+            .map(toI)
+          ,
           numPartitions
         )
 
@@ -66,42 +158,21 @@ trait SuffixArrayBAMTest extends SuffixArrayRDDTest {
       // Sanity-check the first 10 elements.
       ts.take(10).map(toC).mkString("") should be("ATTTTTAAGA")
 
-      val totalLength = 102 * num
+      val totalLength = 101 * num
       ts.count should be(totalLength)
 
       val sa = rdd(ts)
       sa.count should be(totalLength)
 
       // The first `num` elements of the suffix-array should point to the positions of the `num` sentinel values from
-      // the input data, which were every 102nd character (each "read" line in the input was 101 bases long).
-      sa.take(num) should be(1 to num map (_ * 102 - 1) toArray)
+      // the input data, which were every 101st character (each "read" line in the input was 100 bases long).
+      sa.take(num) should be(1 to num map (_ * 101 - 1) toArray)
 
       sa.getNumPartitions should be(numPartitions)
 
-      // Set to true to overwrite the existing "expected" file that SAs will be vetted against.
-      val writeMode = false
-
-      if (writeMode) {
-        sa.saveAsTextFile(s"src/test/resources/$num.sa.ints")
-        ts.saveAsTextFile(s"src/test/resources/$num.ts.ints")
-      } else {
-        val expectedSAFilename = s"src/test/resources/$num.sa.ints"
-        val expectedTSFilename = s"src/test/resources/$num.ts.ints"
-
-        val expectedSA = sc.textFile(expectedSAFilename).collect.map(_.toLong)
-        val actualSA = sa.collect.map(_.toLong)
-        checkArrays(actualSA, expectedSA)
-
-        val expectedTS = sc.textFile(expectedTSFilename).collect.map(_.toLong)
-        val actualTS = ts.collect.map(_.toLong)
-        checkArrays(actualTS, expectedTS)
-      }
+      check(num, sa.collect, ts.collect.map(_.toInt))
     }
   }
-
-  testBam(10, 4)
-  testBam(100, 10)
-  testBam(1000, 10)
 }
 
 trait SuffixArrayDNATest extends SuffixArrayTestBase {
@@ -140,11 +211,10 @@ trait SuffixArrayDNATest extends SuffixArrayTestBase {
       }
     }
   }
-
 }
 
 trait SuffixArrayOtherTest extends SuffixArrayTestBase {
-  test(s"SA 6") {
+  test(s"SA-6") {
     arr(Array(5, 1, 3, 0, 4, 5, 2), 7) should be(Array(3, 1, 6, 2, 4, 0, 5))
     arr(Array(2, 2, 2, 2, 0, 2, 2, 2, 1), 9) should be(Array(4, 8, 3, 7, 2, 6, 1, 5, 0))
   }
@@ -162,6 +232,7 @@ trait SuffixArrayOtherTest extends SuffixArrayTestBase {
       6, 1, 1, 2, 3, 3, 7, 3, 1, 9,  // 8
       8, 8, 8, 6, 9, 5, 5, 9, 4, 8   // 9
     )
+
     val expected =
       Array(
         81, 52, 23, 82, 9, 74, 41, 31, 49, 33, 53, 24, 72, 57, 20, 88,         // 1's
@@ -174,6 +245,7 @@ trait SuffixArrayOtherTest extends SuffixArrayTestBase {
         99, 51, 8, 73, 30, 48, 71, 45, 58, 66, 39, 21, 92, 26, 2, 69, 91, 90,  // 8's
         11, 62, 36, 97, 94, 17, 44, 89, 61, 16                                 // 9's
       )
+
     arr(a, 10) should be (expected)
   }
 
@@ -184,4 +256,6 @@ trait SuffixArrayOtherTest extends SuffixArrayTestBase {
   }
 }
 
-trait SuffixArrayTest extends SuffixArrayOtherTest with SuffixArrayDNATest
+trait SuffixArrayTest
+  extends SuffixArrayOtherTest
+    with SuffixArrayDNATest
