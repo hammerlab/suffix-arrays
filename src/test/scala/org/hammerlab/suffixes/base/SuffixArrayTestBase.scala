@@ -16,9 +16,9 @@ trait SuffixArrayTestBase extends FunSuite with Matchers {
       if line.trim.nonEmpty
       s <- line.split(",")
       i = s.trim().toInt
-    } yield {
+    } yield
       i
-    }).toArray
+    ).toArray
   }
 }
 
@@ -109,11 +109,11 @@ trait SuffixArrayBAMTest extends SuffixArrayRDDTest {
 }
 
 trait SuffixArrayDNATest extends SuffixArrayTestBase {
-  test(s"SA 1") {
+  test("SA-1") {
     arr(Array(0, 1, 2, 0, 1, 1), 4) should be(Array(0, 3, 5, 4, 1, 2))
   }
 
-  test(s"SA 2") {
+  test("SA-2") {
     // Inserting elements at the end of the above array.
     arr(Array(0, 1, 2, 0, 1, 1, 0), 4) should be(Array(0, 3, 6, 5, 4, 1, 2))
     arr(Array(0, 1, 2, 0, 1, 1, 1), 4) should be(Array(0, 3, 6, 5, 4, 1, 2))
@@ -121,7 +121,7 @@ trait SuffixArrayDNATest extends SuffixArrayTestBase {
     arr(Array(0, 1, 2, 0, 1, 1, 3), 4) should be(Array(0, 3, 4, 1, 5, 2, 6))
   }
 
-  test(s"SA 3") {
+  test("SA-3") {
     // Inserting elements at index 3 in the last array above.
     arr(Array(0, 1, 2, 0, 0, 1, 1, 3), 4) should be(Array(0, 3, 4, 5, 1, 6, 2, 7))
     arr(Array(0, 1, 2, 1, 0, 1, 1, 3), 4) should be(Array(0, 4, 3, 5, 1, 6, 2, 7))
@@ -137,7 +137,7 @@ trait SuffixArrayDNATest extends SuffixArrayTestBase {
     arr(Array(0, 1, 2, 0, 1, 3, 1, 0), 4) should be(Array(0, 3, 7, 6, 1, 4, 2, 5))
   }
 
-  test(s"SA 5: zeroes") {
+  test("SA-5: zeroes") {
     for { i <- 0 to 16 } {
       withClue(s"$i zeroes:") {
         arr(Array.fill(i+1)(0), 4) should be((0 to i).toArray)
