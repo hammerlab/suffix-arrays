@@ -1,14 +1,14 @@
 package org.hammerlab.pageant.suffixes.pdc3
 
 import org.apache.spark.rdd.RDD
-import org.hammerlab.pageant.suffixes.base.{SuffixArrayBAMTest, SuffixArrayTest}
-import org.scalatest.{FunSuite, Matchers}
+import org.hammerlab.pageant.suffixes.base.{ SuffixArrayBAMTest, SuffixArrayTest }
+import org.hammerlab.spark.test.suite.KryoSparkSuite
+import org.scalatest.{ FunSuite, Matchers }
 
 class PDC3Test
-  extends SuffixArrayBAMTest
+  extends KryoSparkSuite(classOf[PDC3Registrar])
+    with SuffixArrayBAMTest
     with SuffixArrayTest {
-
-  register(classOf[Joined])
 
   override def arr(a: Array[Int], n: Int): Array[Int] =
     PDC3(sc.parallelize(a.map(_.toLong))).map(_.toInt).collect

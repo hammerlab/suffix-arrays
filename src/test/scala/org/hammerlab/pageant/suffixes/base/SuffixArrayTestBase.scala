@@ -1,8 +1,8 @@
 package org.hammerlab.pageant.suffixes.base
 
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.hammerlab.pageant.fm.utils.Utils.toI
-import org.hammerlab.pageant.utils.PageantSuite
+import org.hammerlab.pageant.dna.Utils.toI
 import org.hammerlab.test.resources.File
 import org.scalatest.{ FunSuite, Matchers }
 
@@ -23,9 +23,8 @@ trait SuffixArrayTestBase extends FunSuite with Matchers {
 }
 
 trait SuffixArrayRDDTest
-  extends PageantSuite
-    with SuffixArrayTestBase {
-
+  extends SuffixArrayTestBase {
+  def sc: SparkContext
   def rdd(r: RDD[Byte]): RDD[Int]
 }
 

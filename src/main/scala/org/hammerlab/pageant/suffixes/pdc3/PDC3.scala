@@ -1,15 +1,19 @@
 package org.hammerlab.pageant.suffixes.pdc3
 
-import java.io.{ObjectInputStream, ObjectOutputStream}
+import java.io.{ ObjectInputStream, ObjectOutputStream }
 
-import org.apache.hadoop.fs.{FileSystem, Path}
+import com.esotericsoftware.kryo.Kryo
+import org.apache.hadoop.fs.{ FileSystem, Path }
 import org.apache.hadoop.io.compress.BZip2Codec
 import org.apache.spark.rdd.RDD
+import org.apache.spark.serializer.KryoRegistrator
 import org.hammerlab.magic.rdd.sort.SortRDD._
 import org.hammerlab.magic.rdd.serde.SequenceFileSerializableRDD._
 import org.hammerlab.magic.rdd.sliding.SlidingRDD._
 import org.hammerlab.pageant.suffixes.dc3.DC3
+import org.hammerlab.pageant.suffixes.pdc3.PDC3.Name
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
@@ -550,5 +554,20 @@ object PDC3 {
 
     pl("Returning")
     sorted
+  }
+}
+
+class PDC3Registrar extends KryoRegistrator {
+  override def registerClasses(kryo: Kryo): Unit = {
+    kryo.register(classOf[Joined])
+    kryo.register(classOf[Name])
+    kryo.register(Class.forName("scala.reflect.ClassTag$$anon$1"))
+    kryo.register(classOf[mutable.WrappedArray.ofRef[_]])
+    kryo.register(classOf[mutable.WrappedArray.ofLong])
+    kryo.register(classOf[mutable.WrappedArray.ofByte])
+    kryo.register(classOf[java.lang.Class[_]])
+    kryo.register(classOf[Array[String]])
+    kryo.register(classOf[Array[Int]])
+    kryo.register(Class.forName("scala.collection.immutable.Map$EmptyMap$"))
   }
 }
