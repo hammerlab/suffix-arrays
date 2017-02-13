@@ -1,7 +1,7 @@
-package org.hammerlab.pageant.suffixes.pdc3
+package org.hammerlab.suffixes.pdc3
 
-import org.hammerlab.pageant.suffixes.pdc3.PDC3.Name
-import org.hammerlab.pageant.utils.Utils.longToCmpFnReturn
+import org.hammerlab.suffixes.pdc3.PDC3.Name
+import Utils.longToCmpFnReturn
 
 object JoinedCmp extends Ordering[(Name, Joined)] {
 

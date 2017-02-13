@@ -1,7 +1,7 @@
-package org.hammerlab.pageant.suffixes.pdc3
+package org.hammerlab.suffixes.pdc3
 
 import org.apache.spark.rdd.RDD
-import org.hammerlab.pageant.suffixes.base.{ SuffixArrayBAMTest, SuffixArrayTest }
+import org.hammerlab.suffixes.base.{ SuffixArrayBAMTest, SuffixArrayTest }
 import org.hammerlab.spark.test.suite.KryoSparkSuite
 import org.scalatest.{ FunSuite, Matchers }
 

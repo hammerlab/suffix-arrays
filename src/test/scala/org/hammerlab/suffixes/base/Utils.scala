@@ -1,4 +1,4 @@
-package org.hammerlab.pageant.dna
+package org.hammerlab.suffixes.base
 
 object Utils {
   val toI: Map[Char, Byte] = "$ACGTN".zipWithIndex.toMap.map(p => (p._1, p._2.toByte))

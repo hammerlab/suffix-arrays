@@ -1,4 +1,4 @@
-package org.hammerlab.pageant.suffixes.dc3
+package org.hammerlab.suffixes.dc3
 
 import scala.collection.mutable.ArrayBuffer
 

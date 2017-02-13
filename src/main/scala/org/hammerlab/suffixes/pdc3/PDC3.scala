@@ -1,4 +1,4 @@
-package org.hammerlab.pageant.suffixes.pdc3
+package org.hammerlab.suffixes.pdc3
 
 import java.io.{ ObjectInputStream, ObjectOutputStream }
 
@@ -10,8 +10,8 @@ import org.apache.spark.serializer.KryoRegistrator
 import org.hammerlab.magic.rdd.sort.SortRDD._
 import org.hammerlab.magic.rdd.serde.SequenceFileSerializableRDD._
 import org.hammerlab.magic.rdd.sliding.SlidingRDD._
-import org.hammerlab.pageant.suffixes.dc3.DC3
-import org.hammerlab.pageant.suffixes.pdc3.PDC3.Name
+import org.hammerlab.suffixes.dc3.DC3
+import org.hammerlab.suffixes.pdc3.PDC3.Name
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer

@@ -1,4 +1,4 @@
-package org.hammerlab.pageant.utils
+package org.hammerlab.suffixes.pdc3
 
 object Utils {
   def longToCmpFnReturn(l: Long) =

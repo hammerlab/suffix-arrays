@@ -1,7 +1,7 @@
-package org.hammerlab.pageant.suffixes.pdc3
+package org.hammerlab.suffixes.pdc3
 
-import org.hammerlab.pageant.suffixes.pdc3.PDC3.L
-import org.hammerlab.pageant.utils.Utils.longToCmpFnReturn
+import org.hammerlab.suffixes.pdc3.PDC3.L
+import Utils.longToCmpFnReturn
 
 object PairCmp extends Ordering[(L, L, L)] {
   override def compare(x: (L, L, L), y: (L, L, L)): Int =

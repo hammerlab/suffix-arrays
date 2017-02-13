@@ -1,8 +1,8 @@
-package org.hammerlab.pageant.suffixes.base
+package org.hammerlab.suffixes.base
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.hammerlab.pageant.dna.Utils.toI
+import Utils.toI
 import org.hammerlab.test.resources.File
 import org.scalatest.{ FunSuite, Matchers }
 

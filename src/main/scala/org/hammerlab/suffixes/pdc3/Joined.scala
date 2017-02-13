@@ -1,6 +1,6 @@
-package org.hammerlab.pageant.suffixes.pdc3
+package org.hammerlab.suffixes.pdc3
 
-import org.hammerlab.pageant.suffixes.pdc3.PDC3.{L, OL}
+import org.hammerlab.suffixes.pdc3.PDC3.{L, OL}
 
 case class Joined(t0O: OL = None, t1O: OL = None, n0O: OL = None, n1O: OL = None) {
   override def toString: String = {
