@@ -2,7 +2,7 @@ package org.hammerlab.suffixes.base
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import Utils.toI
+import org.hammerlab.suffixes.base.Utils.{ toC, toI }
 import org.hammerlab.test.resources.File
 import org.scalatest.{ FunSuite, Matchers }
 
@@ -46,10 +46,12 @@ trait SuffixArrayBAMTest extends SuffixArrayRDDTest {
   }
 
   def testBam(num: Int, numPartitions: Int): Unit = {
-    val name = s"$num-$numPartitions"
+    val name = s"bam-$num-$numPartitions"
     test(name) {
 
-      val ots =
+      // Take `num` reads from the start of `1000.reads`, append a sentinel '$' to each, map to integers, and
+      // distribute.
+      val ts =
         sc.parallelize(
           sc
             .textFile(File("1000.reads").path, numPartitions)
@@ -59,18 +61,10 @@ trait SuffixArrayBAMTest extends SuffixArrayRDDTest {
           numPartitions
         )
 
-      ots.getNumPartitions should be(numPartitions)
-      ots.take(10) should be(Array(1, 4, 4, 4, 4, 4, 1, 1, 3, 1))
-
-      val ts =
-        ots
-          .zipWithIndex
-          .map(_.swap)
-          .sortByKey(numPartitions = numPartitions)
-          .values
-
       ts.getNumPartitions should be(numPartitions)
-      ts.take(10) should be(Array(1, 4, 4, 4, 4, 4, 1, 1, 3, 1))
+
+      // Sanity-check the first 10 elements.
+      ts.take(10).map(toC).mkString("") should be("ATTTTTAAGA")
 
       val totalLength = 102 * num
       ts.count should be(totalLength)
@@ -78,6 +72,8 @@ trait SuffixArrayBAMTest extends SuffixArrayRDDTest {
       val sa = rdd(ts)
       sa.count should be(totalLength)
 
+      // The first `num` elements of the suffix-array should point to the positions of the `num` sentinel values from
+      // the input data, which were every 102nd character (each "read" line in the input was 101 bases long).
       sa.take(num) should be(1 to num map (_ * 102 - 1) toArray)
 
       sa.getNumPartitions should be(numPartitions)

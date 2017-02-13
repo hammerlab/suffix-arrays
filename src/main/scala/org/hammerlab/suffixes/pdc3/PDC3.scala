@@ -274,12 +274,17 @@ object PDC3 {
     // 0's are considered to be sentinels, with each one distinct and lexicographically ordered according to its
     // position in the collection. We want to make sure there is
     val padded =
-      if (n % 3 == 0)
-        tuples ++ t.context.parallelize(((0L, 0L, 0L), n+1) :: Nil)
-      else if (n % 3 == 1)
-        tuples ++ t.context.parallelize(((0L, 0L, 0L), n) :: Nil)
-      else
-        tuples ++ t.context.parallelize(((0L, 0L, 0L), n) :: Nil)
+      tuples ++
+        t.context.parallelize(
+          if (n % 3 == 0)
+            ((0L, 0L, 0L), n+1) :: Nil
+          else if (n % 3 == 1)
+            ((0L, 0L, 0L), n) :: Nil
+          else
+            ((0L, 0L, 0L), n) :: Nil
+          ,
+          numSlices = 1
+        )
 
     // All [12]%3 triplets and indexes, sorted by `cmpL3I` above.
     val S: RDD[L3I] = backupRDD("S", padded.sort())
@@ -613,22 +618,23 @@ object PDC3 {
 
     implicit val cmpFn = JoinedCmp
     val sorted = backupRDD("sorted", joined.sort().keys)
+
     progress("sorted", sorted)
 
     if (debug) {
       sorted
-        .map(_ → null)
-        .sortByKey()
-        .keys
+        .sort()
         .zipWithIndex
-        .map(t ⇒
-          if (t._1 != t._2)
-            throw new Exception(s"idx ${t._2}: ${t._1}")
-        )
+        .map {
+          case (key, idx) ⇒
+            if (key != idx)
+              throw new Exception(s"idx $idx: $key")
+        }
         .count()
     }
 
     pl("Returning")
+
     sorted
   }
 
