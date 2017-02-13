@@ -1,8 +1,8 @@
 # suffix-arrays
 Spark-based implementation of pDC3, a linear-time parallel suffix-array-construction algorithm.
 
-[![Build Status](https://travis-ci.org/ryan-williams/suffix-arrays.svg?branch=master)](https://travis-ci.org/ryan-williams/suffix-arrays)
-[![Coverage Status](https://coveralls.io/repos/github/ryan-williams/suffix-arrays/badge.svg?branch=master)](https://coveralls.io/github/ryan-williams/suffix-arrays?branch=master)
+[![Build Status](https://travis-ci.org/hammerlab/suffix-arrays.svg?branch=master)](https://travis-ci.org/hammerlab/suffix-arrays)
+[![Coverage Status](https://coveralls.io/repos/github/hammerlab/suffix-arrays/badge.svg?branch=master)](https://coveralls.io/github/hammerlab/suffix-arrays?branch=master)
 [![Maven Central](https://img.shields.io/maven-central/v/org.hammerlab/suffix-arrays_2.11.svg?maxAge=600)](http://search.maven.org/#search%7Cga%7C1%7Corg.hammerlab%20suffix-arrays)
 
 This repo contains:
