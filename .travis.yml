@@ -3,7 +3,10 @@ sudo: false
 jdk:
   - oraclejdk8
 
-script: sbt clean test
+scala:
+  - 2.11.8
+
+script: sbt ++$TRAVIS_SCALA_VERSION clean test
 
 cache:
   directories:
@@ -11,7 +14,7 @@ cache:
   - $HOME/.sbt/boot/
   - $HOME/.zinc
 
-after_success: sbt travis-report
+after_success: sbt ++$TRAVIS_SCALA_VERSION travis-report
 
 before_cache:
   # Tricks to avoid unnecessary cache updates
