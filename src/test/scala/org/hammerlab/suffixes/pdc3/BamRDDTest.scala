@@ -22,7 +22,7 @@ trait BamRDDTest
       val ts =
         sc.parallelize(
           sc
-            .textFile(File("1000.reads").path, numPartitions)
+            .textFile(File("1000.reads"), numPartitions)
             .take(num)
             .flatMap(_ + '$')
             .map(toI)

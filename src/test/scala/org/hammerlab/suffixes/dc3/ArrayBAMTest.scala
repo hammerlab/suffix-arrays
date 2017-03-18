@@ -25,7 +25,7 @@ trait ArrayBAMTest
       // distribute.
       val ts =
         scala.io.Source
-          .fromFile(File("1000.reads").path)
+          .fromFile(File("1000.reads"))
           .getLines()
           .take(num)
           .flatMap(_ + '$')
